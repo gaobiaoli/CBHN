@@ -267,8 +267,8 @@ class SimpleNet(nn.Module):
         super().__init__()
         # self.encoder=SwinTransformer(param=param)
         self.fea_ext=self.feature_extractor(input_channels=input_channels,out_channles=1)
-    @staticmethod
-    def feature_extractor(input_channels, out_channles, kernel_size=3, padding=1):
+
+    def feature_extractor(self,input_channels, out_channles, kernel_size=3, padding=1):
         layers = []
         channels = [input_channels, 4, 8, out_channles]
         for i in range(len(channels) - 1):
@@ -276,6 +276,7 @@ class SimpleNet(nn.Module):
             layers.append(nn.BatchNorm2d(channels[i + 1]))
             layers.append(nn.ReLU(inplace=True))
         return nn.Sequential(*layers)
+    
     def forward(self,input):
         x=self.fea_ext(input)
         # feas=self.fea_ext(x)

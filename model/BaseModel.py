@@ -10,12 +10,14 @@ class BaseModel(nn.Module):
         self.backbone_1 = backbone_1
         self.backbone_2 = backbone_2
         self.registration = registration
-        self.basis = gen_basis(320, 320).unsqueeze(0).reshape(1, 8, -1)
+        self.basis = gen_basis(512, 512).unsqueeze(0).reshape(1, 8, -1)
 
-    def forward(self, img1_patch, img2_patch):
-        bs, _, h_patch, w_patch = img1_patch.size()
-        img1_patch_fea = self.backbone_1(img1_patch)
-        img2_patch_fea = self.backbone_2(img2_patch)
+    def forward(self, batch=None):
+        bs, _, h_patch, w_patch = batch["img1_patch"].size()
+        img1_patch_fea = self.backbone_1(batch["img1_patch"])
+        img2_patch_fea = self.backbone_2(batch["img2_patch"])
+        img1_full_fea = self.backbone_1(batch["img1_full"])
+        img2_full_fea = self.backbone_2(batch["img2_full"])
         # ========================forward ====================================
 
         forward_fea = torch.cat([img1_patch_fea, img2_patch_fea], dim=1)
@@ -28,9 +30,13 @@ class BaseModel(nn.Module):
         # 用来转换Img2___get_warp_flow
 
         # ========================backward===================================
-        # backward_fea = torch.cat([img2_patch_fea, img1_patch_fea], dim=1)
-        # weight_b = self.registration(backward_fea)
-        # H_flow_b = (self.basis.to(backward_fea.device) * weight_b).sum(1).reshape(bs, 2, h_patch, w_patch)
+        backward_fea = torch.cat([img2_patch_fea, img1_patch_fea], dim=1)
+        weight_b = self.registration(backward_fea)
+        H_flow_b = (
+            (self.basis.to(backward_fea.device) * weight_b)
+            .sum(1)
+            .reshape(bs, 2, h_patch, w_patch)
+        )
         # 用来转换Img1___get_warp_flow
 
         # warp_img1_patch, warp_img1_patch_fea = list(
@@ -41,7 +47,12 @@ class BaseModel(nn.Module):
         # img1_patch_warp_fea, img2_patch_warp_fea = list(
         #     map(self.fea_extra, [warp_img1_patch, warp_img2_patch]))
 
-        return {"H_flow_f": H_flow_f, "H_flow_b": None,'weight_f':weight_f}
+        return {
+            "H_flow_f": H_flow_f,
+            "H_flow_b": H_flow_b,
+            "weight_f": weight_f,
+            "weight_b": weight_b,
+        }
 
 
 class SwinBackbone(nn.Module):

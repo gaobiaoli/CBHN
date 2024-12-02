@@ -1,7 +1,7 @@
 import numpy as np
 import cv2
-cv2.setNumThreads(0)
-cv2.ocl.setUseOpenCL(False)
+# cv2.setNumThreads(0)
+# cv2.ocl.setUseOpenCL(False)
 import matplotlib.pyplot as plt
 import torch
 import random
@@ -336,19 +336,22 @@ def getFlowWithTorch(shape,H,H_inverse):
 
     return diff_branch, diff_branch_inv
 
-def generateTrainImagePair(img1, img2, marginal=32, patch_size=640):
+def generateTrainImagePair(img1, img2, marginal=32, patch_size=640,reshape=None):
     
+    
+    # 检查并调整图像
     min_height = 2 * marginal + patch_size
     min_width = 2 * marginal + patch_size
-
-    # 检查并调整图像
-    if img1.shape[0] < min_height or img1.shape[1] < min_width:
+    if reshape is not None:
+        min_height=reshape[0]
+        min_width=reshape[1]
+        img1 = resize_and_pad(img1, min_height, min_width)
+        img2 = resize_and_pad(img2, min_height, min_width)
+    elif img1.shape[0] < min_height or img1.shape[1] < min_width:
         img1 = resize_and_pad(img1, min_height, min_width)
         img2 = resize_and_pad(img2, min_height, min_width)
     
     four_points_new,perturbed_four_points_new, crop_fn = getDisturbedBox(img1.shape[0:-1], marginal, patch_size)
-
-    
 
     org_corners = np.float32(four_points_new)
     dst = np.float32(perturbed_four_points_new)
@@ -361,30 +364,25 @@ def generateTrainImagePair(img1, img2, marginal=32, patch_size=640):
     img_patch_ori = crop_fn(img1)
     img_patch_pert = crop_fn(warped_image)
 
-    diff_branch,diff_branch_inv=getFlow(img1.shape[0:2],H,H_inverse)
-    # diff_branch1,diff_branch_inv1=getFlowWithTorch(img1.shape[0:2],H,H_inverse)
+    # diff_branch,diff_branch_inv=getFlow(img1.shape[0:2],H,H_inverse)
 
-    pf_patch=crop_fn(diff_branch)
-    pf_patch_inv=crop_fn(diff_branch_inv)
+    # pf_patch=crop_fn(diff_branch)
+    # pf_patch_inv=crop_fn(diff_branch_inv)
 
-    # pf_patch = np.zeros((patch_size, patch_size, 2))
-    # pf_patch_inv = np.zeros((patch_size, patch_size, 2))
+    pf_patch,pf_patch_inv=1,1
 
-    # pf_patch[:, :, 0] = crop_fn(diff_branch[:, 0].reshape((img1.shape[0], img1.shape[1])))
-    # pf_patch[:, :, 1] = crop_fn(diff_branch[:, 1].reshape((img1.shape[0], img1.shape[1])))
+    return {
+            "img1_patch": img_patch_ori,
+            "img2_patch": img_patch_pert,
+            "img1_full": img1,
+            "img2_full": warped_image,
+            "flow_img1": pf_patch,
+            "flow_img2": pf_patch_inv,
+            "disturbed_corners": disturbed_corners,
+            "origin_corners": org_corners,
+            "H": H,
+        }
 
-    # pf_patch_inv[:, :, 0] = crop_fn(diff_branch_inv[:, 0].reshape((img1.shape[0], img1.shape[1])))
-    # pf_patch_inv[:, :, 1] = crop_fn(diff_branch_inv[:, 1].reshape((img1.shape[0], img1.shape[1])))
-
-
-    # img_patch_ori = img_patch_ori[:, :, ::-1].copy()
-    # img_patch_pert = img_patch_pert[:, :, ::-1].copy()
-    
-    # img1 = torch.from_numpy((img_patch_ori)).float().permute(2, 0, 1)
-    # img2 = torch.from_numpy((img_patch_pert)).float().permute(2, 0, 1)
-    # flow = torch.from_numpy(pf_patch).permute(2, 0, 1).float()
-
-    return img_patch_ori, img_patch_pert, pf_patch,pf_patch_inv, disturbed_corners, org_corners, H
 
 
 if __name__=='__main__':

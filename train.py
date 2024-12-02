@@ -7,6 +7,7 @@ from model.net import getDemoModel
 from utils.config_utils import Params
 from tqdm import tqdm
 from loss.losses import LossL1,LossL2
+from utils.train_utils import tensor_gpu
 import os
 import torch
 import torch.nn as nn
@@ -28,32 +29,31 @@ if __name__ =="__main__":
     param=Params("/CV/gaobiaoli/project/RegistrationNet/config/param.json")
     device='cuda'
     sam = sam_model_registry['vit_b'](checkpoint="/CV/gaobiaoli/project/weights/sam_vit_b_01ec64.pth").to(device)
-    dataset = SAMAugmentedDataset(image_dir="/CV/gaobiaoli/dataset/CIS-Dataset/train", sam=sam,ratio=0.1)
-    dataloader=DataLoader(dataset=dataset,batch_size=8,num_workers=8,pin_memory=True,shuffle=True)
+    dataset = SAMAugmentedDataset(image_dir="/CV/gaobiaoli/dataset/CIS-Dataset/train", sam=sam,ratio=0.1,patch_size=param.crop_size[0])
+    dataloader=DataLoader(dataset=dataset,batch_size=8,num_workers=6,pin_memory=True,shuffle=True,drop_last=True)
     model=getDemoModel(param=param)
     model.to(device)
-    optimizer = optim.Adam(model.parameters(), lr=param.learning_rate)
-    scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=param.gamma)
+    optimizer = optim.SGD(model.parameters(), lr=0.01)
+    scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=1)
     l2l=LossL2()
     for epoch in range(max_epoches):
         total_loss=0
         total_num=0
         with tqdm(total=len(dataloader), ncols=100,desc=f'Epoch-{epoch+1}') as t:
             for id,batch in enumerate(dataloader):
+                batch=tensor_gpu(batch)
                 # batch['img1'] = batch['img1'].to(device)
                 # batch['img2'] = batch['img2'].to(device)
-                target=batch['disturbed_corners'].to(device)
-                flow_img1=batch['flow_img1'].to(device)
-                flow_img2=batch['flow_img1'].to(device)
-                pred=model(batch['img1'].to(device),batch['img2'].to(device))
+                pred=model(batch)
                 # loss=l2l(pred['H_flow_f'],flow_img2)+l2l(pred['H_flow_b'],flow_img1)
                 # loss=0
-                loss=cal_mace(target,pred['H_flow_f'])
+                # loss=cal_mace(batch['disturbed_corners'],pred['H_flow_b'])
+                loss=l2l(batch['disturbed_corners'].flatten(1),pred['weight_b'])
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
                 total_loss+=loss.item()
-                total_num+=len(batch['img1'])
+                total_num+=len(batch['img1_full'])
                 t.set_postfix({"loss":loss.item(),"LR":scheduler.get_last_lr()})
                 t.update()  
         scheduler.step()

@@ -7,6 +7,60 @@ from SAM.SamAutomaticMaskGenerator import SamAutomaticMaskGenerator
 from utils.transform_utils import generateTrainImagePair
 
 
+class BaseDataset(Dataset):
+    def __init__(
+        self,
+        image_dir,
+        cache_dir="cache",
+        device="cuda",
+        transform=None,
+        ratio=1.0,
+        patch_size=328
+    ):
+        self.image_dir = image_dir
+        self.image_files = [
+            f for f in os.listdir(image_dir) if f.endswith((".png", ".jpg", ".jpeg"))
+        ]
+        self.image_files = self.image_files[0 : int(len(self.image_files) * ratio)]
+        self.device = device
+        self.transform = transform
+        self.cache_dir = cache_dir
+        self.patch_size=patch_size
+    def __len__(self):
+        return len(self.image_files)
+
+    def _process_mask(self, mask):
+        # 检查mask的维度并做相应处理
+        if len(mask.shape) == 2:  # (w, h)
+            mask = mask.unsqueeze(0)  # (1, w, h)
+        elif len(mask.shape) == 3:
+            if mask.shape[2] == 1:  # (w, h, 1)
+                mask = mask.squeeze(2)  # (w, h)
+                mask = mask.unsqueeze(0)  # (1, w, h)
+            elif mask.shape[2] == 3:  # (w, h, 3)
+                mask = mask.permute(2, 0, 1)  # (3, w, h)
+
+        return mask
+    def __getitem__(self, idx):
+        img_path = os.path.join(self.image_dir, self.image_files[idx])
+        image = np.array(Image.open(img_path))
+        
+        # 单应性变换
+        data_dict = generateTrainImagePair(image, image, patch_size=self.patch_size,reshape=(640,640))
+
+        # 将图像和扭曲后的mask转换为tensor
+        data_dict['img1_patch'] = torch.from_numpy(data_dict['img1_patch']).permute(2, 0, 1).float() / 255.0
+        data_dict['img2_patch'] = self._process_mask(torch.from_numpy(data_dict['img2_patch'])) / 255.0
+        data_dict['img1_full'] = torch.from_numpy(data_dict['img1_full']).permute(2, 0, 1) / 255.0
+        data_dict['img2_full'] = self._process_mask(torch.from_numpy(data_dict['img2_full'])) / 255.0
+        data_dict['disturbed_corners'] = torch.from_numpy(data_dict['disturbed_corners']).permute(2, 0, 1).float()
+
+        # 如果有其他transform，进行处理
+        # if self.transform:
+        #     image = self.transform(image)
+
+        return data_dict
+
 class SAMAugmentedDataset(Dataset):
     def __init__(
         self,
@@ -16,7 +70,7 @@ class SAMAugmentedDataset(Dataset):
         device="cuda",
         transform=None,
         ratio=1.0,
-        patch_size=320
+        patch_size=328
     ):
         # 初始化图像文件夹路径，SAM模型，设备等参数
         self.image_dir = image_dir
@@ -83,35 +137,20 @@ class SAMAugmentedDataset(Dataset):
         #     mask[m['segmentation']] = i + 1
 
         # 单应性变换
-        (
-            image,
-            warped_image,
-            flow_img1,
-            flow_img2,
-            disturbed_corners,
-            origin_corners,
-            H,
-        ) = generateTrainImagePair(image, image, patch_size=self.patch_size)
+        data_dict = generateTrainImagePair(image, image, patch_size=self.patch_size)
 
         # 将图像和扭曲后的mask转换为tensor
-        image = torch.from_numpy(image).permute(2, 0, 1).float() / 255.0
-        warped_image = self._process_mask(torch.from_numpy(warped_image)) / 255.0
-        flow_img1 = torch.from_numpy(flow_img1).permute(2, 0, 1).float()
-        flow_img2 = torch.from_numpy(flow_img2).permute(2, 0, 1).float()
-        disturbed_corners = torch.from_numpy(disturbed_corners).permute(2, 0, 1).float()
+        data_dict['img1_patch'] = torch.from_numpy(data_dict['img1_patch']).permute(2, 0, 1).float() / 255.0
+        data_dict['img2_patch'] = self._process_mask(torch.from_numpy(data_dict['img2_patch'])) / 255.0
+        data_dict['img1_full'] = torch.from_numpy(data_dict['img1_full']).permute(2, 0, 1) / 255.0
+        data_dict['img2_full'] = self._process_mask(torch.from_numpy(data_dict['img2_full'])) / 255.0
+        data_dict['disturbed_corners'] = torch.from_numpy(data_dict['disturbed_corners']).permute(2, 0, 1).float()
 
         # 如果有其他transform，进行处理
-        if self.transform:
-            image = self.transform(image)
+        # if self.transform:
+        #     image = self.transform(image)
 
-        return {
-            "img1": image,
-            "img2": warped_image,
-            "flow_img1": flow_img1,
-            "flow_img2": flow_img2,
-            "disturbed_corners": disturbed_corners,
-            "origin_corners": origin_corners,
-        }
+        return data_dict
 
 
 # 示例用法

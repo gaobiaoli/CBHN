@@ -24,8 +24,8 @@
     "memory": 14336,
     "gpu": 4,
     "crop_size": [
-        320,
-        320
+        512,
+        512
     ],
     "in_channels": 2,
     "patch_size": 4,
