@@ -24,7 +24,7 @@ class TempModel(nn.Module):
 
 
 if __name__ =="__main__":
-    max_epoches=50
+    max_epoches=500
     param=Params("/CV/gaobiaoli/project/RegistrationNet/config/param.json")
     device='cuda'
     dataset = BaseDataset(image_dir="/CV/gaobiaoli/dataset/coco/train2017",ratio=0.1,patch_size=128)

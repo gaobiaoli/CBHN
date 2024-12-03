@@ -17,6 +17,7 @@ class BaseDataset(Dataset):
         transform=None,
         ratio=1.0,
         reshape=(640,640),
+        keep_ratio=True,
         patch_size=328
     ):
         self.image_dir = image_dir
@@ -29,6 +30,7 @@ class BaseDataset(Dataset):
         self.cache_dir = cache_dir
         self.patch_size=patch_size
         self.reshape=reshape
+        self.keep_ratio=keep_ratio
         self.mean_I = np.array([118.93, 113.97, 102.60]).reshape(1, 1, 3)
         self.std_I = np.array([69.85, 68.81, 72.45]).reshape(1, 1, 3)
     def __len__(self):
@@ -51,13 +53,13 @@ class BaseDataset(Dataset):
         image = cv2.cvtColor(cv2.imread(img_path),cv2.COLOR_BGR2RGB)
         
         # 单应性变换
-        data_dict = generateTrainImagePair(image, image, patch_size=self.patch_size,reshape=self.reshape)
+        data_dict = generateTrainImagePair(image, image, patch_size=self.patch_size,reshape=self.reshape,keep_ratio=self.keep_ratio)
 
         # 将图像和扭曲后的mask转换为tensor
-        data_dict['img1_patch'] = torch.from_numpy(self.normlize(data_dict['img1_patch'])).permute(2, 0, 1).float() / 255.0
-        data_dict['img2_patch'] = self._process_mask(torch.from_numpy(self.normlize(data_dict['img2_patch']))) / 255.0
-        data_dict['img1_full'] = torch.from_numpy(self.normlize(data_dict['img1_full'])).permute(2, 0, 1) / 255.0
-        data_dict['img2_full'] = self._process_mask(torch.from_numpy(self.normlize(data_dict['img2_full']))) / 255.0
+        data_dict['img1_patch'] = torch.from_numpy(self.normlize(data_dict['img1_patch'])).permute(2, 0, 1).float()
+        data_dict['img2_patch'] = self._process_mask(torch.from_numpy(self.normlize(data_dict['img2_patch']))).float()
+        data_dict['img1_full'] = torch.from_numpy(self.normlize(data_dict['img1_full'])).permute(2, 0, 1).float()
+        data_dict['img2_full'] = self._process_mask(torch.from_numpy(self.normlize(data_dict['img2_full']))).float()
         data_dict['disturbed_corners'] = torch.from_numpy(data_dict['disturbed_corners']).permute(2, 0, 1).float()
 
         # 如果有其他transform，进行处理
@@ -65,8 +67,10 @@ class BaseDataset(Dataset):
         #     image = self.transform(image)
         
         return data_dict
+    
     def normlize(self,ndarray):
         return (ndarray-self.mean_I)/self.std_I
+    
 class SAMAugmentedDataset(Dataset):
     def __init__(
         self,

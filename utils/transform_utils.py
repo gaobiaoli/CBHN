@@ -236,8 +236,10 @@ def warpPerspective(img, H, dsize, mode='bilinear', padding_mode='zeros', align_
     else:
         raise TypeError("Input image must be a numpy ndarray or a torch tensor.")
 
-def resize_and_pad(img, target_height, target_width):
+def resize_and_pad(img, target_height, target_width,keep_ratio=True):
     """调整图像尺寸并填充以适应目标尺寸"""
+    if not keep_ratio:
+        resized_img = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_LINEAR)
     original_height, original_width = img.shape[:2]
     scale = min(target_width / original_width, target_height / original_height)
     new_width = int(original_width * scale)
@@ -336,7 +338,7 @@ def getFlowWithTorch(shape,H,H_inverse):
 
     return diff_branch, diff_branch_inv
 
-def generateTrainImagePair(img1, img2, marginal=32, patch_size=640,reshape=None):
+def generateTrainImagePair(img1, img2, marginal=32, patch_size=640,reshape=None,keep_ratio=True):
     
     # 检查并调整图像
     min_height = 2 * marginal + patch_size
