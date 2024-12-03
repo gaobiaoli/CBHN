@@ -10,7 +10,7 @@ class BaseModel(nn.Module):
         self.backbone_1 = backbone_1
         self.backbone_2 = backbone_2
         self.registration = registration
-        self.basis = gen_basis(512, 512).unsqueeze(0).reshape(1, 8, -1)
+        self.basis = gen_basis(128, 128).unsqueeze(0).reshape(1, 8, -1)
 
     def forward(self, batch=None):
         bs, _, h_patch, w_patch = batch["img1_patch"].size()
@@ -40,18 +40,28 @@ class BaseModel(nn.Module):
         # 用来转换Img1___get_warp_flow
 
         # warp_img1_patch, warp_img1_patch_fea = list(
-        #         map(lambda x: get_warp_flow(x, H_flow_b, start), [img1_patch, img1_patch_fea]))
+        #         map(lambda x: get_warp_flow(x, H_flow_b, 0), [batch["img1_patch"], img1_patch_fea]))
         # warp_img2_patch, warp_img2_patch_fea = list(
-        #     map(lambda x: get_warp_flow(x, H_flow_f, start), [img2_patch, img2_patch_fea]))
+        #     map(lambda x: get_warp_flow(x, H_flow_f, 0), [batch["img2_patch"], img2_patch_fea]))
 
-        # img1_patch_warp_fea, img2_patch_warp_fea = list(
-        #     map(self.fea_extra, [warp_img1_patch, warp_img2_patch]))
+        warp_img1_patch_f, warp_img1_patch_f_fea = list(
+                map(lambda x: get_warp_flow(x, H_flow_b, batch['origin_corners'][:,0,:]), [batch["img1_full"], img1_full_fea]))
+        warp_img2_patch_f, warp_img2_patch_f_fea = list(
+            map(lambda x: get_warp_flow(x, H_flow_f, batch['origin_corners'][:,0,:]), [batch["img2_full"], img2_full_fea]))
+        
 
+        img1_patch_warp_fea, img2_patch_warp_fea = self.backbone_1(warp_img1_patch_f), self.backbone_2(warp_img2_patch_f)
+        # Triple Loss   -|img1_patch_fea-img2_patch_fea|+|img1_patch_warp_fea-img1_patch_fea|+|img2_patch_warp_fea-img2_patch_fea|
+        #               -|warp_img1_patch_f_fea-warp_img2_patch_f_fea|
         return {
-            "H_flow_f": H_flow_f,
-            "H_flow_b": H_flow_b,
-            "weight_f": weight_f,
-            "weight_b": weight_b,
+            "H_flow_2": H_flow_f,
+            "H_flow_1": H_flow_b,
+            "weight_2": weight_f,
+            "weight_1": weight_b,
+            "img1_patch_fea":img1_patch_fea,
+            "img2_patch_fea":img2_patch_fea,
+            "img1_patch_warp_fea":img1_patch_warp_fea,
+            "img2_patch_warp_fea":img2_patch_warp_fea,
         }
 
 

@@ -175,7 +175,7 @@ def get_grid(batch_size, H, W, start=0):
     yy = yy.view(1, 1, H, W).repeat(batch_size, 1, 1, 1)
     ones = torch.ones_like(xx).cuda() if torch.cuda.is_available() else torch.ones_like(xx)
     grid = torch.cat((xx, yy, ones), 1).float()
-    if start!=0:
+    if not isinstance(start,int):
         start=start[:,:,None,None]
     grid[:, :2, :, :] = grid[:, :2, :, :] + start
     return grid
@@ -203,7 +203,7 @@ def gen_basis(h, w, is_qr=True, is_scale=True):
     flows = torch.cat([names['basis_' + str(i)] for i in range(1, basis_nb + 1)], dim=0)
     if is_qr:
         flows_ = flows.view(basis_nb, -1).permute(1, 0)  # N, h, w, c --> N, h*w*c --> h*w*c, N
-        flow_q, _ = torch.qr(flows_)
+        flow_q, _ = torch.linalg.qr(flows_)
         flow_q = flow_q.permute(1, 0).reshape(basis_nb, h, w, 2)
         flows = flow_q
 
@@ -338,7 +338,6 @@ def getFlowWithTorch(shape,H,H_inverse):
 
 def generateTrainImagePair(img1, img2, marginal=32, patch_size=640,reshape=None):
     
-    
     # 检查并调整图像
     min_height = 2 * marginal + patch_size
     min_width = 2 * marginal + patch_size
@@ -365,7 +364,6 @@ def generateTrainImagePair(img1, img2, marginal=32, patch_size=640,reshape=None)
     img_patch_pert = crop_fn(warped_image)
 
     # diff_branch,diff_branch_inv=getFlow(img1.shape[0:2],H,H_inverse)
-
     # pf_patch=crop_fn(diff_branch)
     # pf_patch_inv=crop_fn(diff_branch_inv)
 

@@ -21,7 +21,8 @@ if __name__ =="__main__":
     max_epoches=200
     param=Params("/CV/gaobiaoli/project/RegistrationNet/config/param.json")
     device='cuda'
-    dataset = BaseDataset(image_dir="/CV/gaobiaoli/dataset/CIS-Dataset/train",ratio=0.05,patch_size=128)
+    # dataset = BaseDataset(image_dir="/CV/gaobiaoli/dataset/CIS-Dataset/train",ratio=0.1,patch_size=128)
+    dataset = BaseDataset(image_dir="/CV/gaobiaoli/dataset/coco/train2017",ratio=0.01,patch_size=128)
     dataloader=DataLoader(dataset=dataset,batch_size=64,num_workers=8)
     model=DHN()
     model.to(device)

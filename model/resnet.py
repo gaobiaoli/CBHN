@@ -265,7 +265,6 @@ def simplenet(**kwargs: Any):
 class SimpleNet(nn.Module):
     def __init__(self,input_channels,param) -> None:
         super().__init__()
-        # self.encoder=SwinTransformer(param=param)
         self.fea_ext=self.feature_extractor(input_channels=input_channels,out_channles=1)
 
     def feature_extractor(self,input_channels, out_channles, kernel_size=3, padding=1):

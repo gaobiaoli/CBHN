@@ -155,7 +155,7 @@ class Class_Attention(nn.Module):
 
     def forward(self, x):
         B, N, C = x.shape
-        q = self.q(x[:, :1]).reshape(B, 1, self.num_heads, C // self.num_heads).permute(0, 2, 1, 3)  
+        q = self.q(x[:, :8]).reshape(B, 8, self.num_heads, C // self.num_heads).permute(0, 2, 1, 3)  
         k = self.k(x).reshape(B, N, self.num_heads, C // self.num_heads).permute(0, 2, 1, 3)
 
         q = q * self.scale
@@ -165,7 +165,7 @@ class Class_Attention(nn.Module):
         attn = attn.softmax(dim=-1)
         attn = self.attn_drop(attn)
 
-        x_cls = (attn @ v).transpose(1, 2).reshape(B, 1, C)
+        x_cls = (attn @ v).transpose(1, 2).reshape(B, 8, C)
         x_cls = self.proj(x_cls)
         x_cls = self.proj_drop(x_cls)
 
