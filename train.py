@@ -39,8 +39,8 @@ if __name__ =="__main__":
     param=Params("/CV/gaobiaoli/project/RegistrationNet/config/param.json")
     device='cuda'
     # sam = sam_model_registry['vit_b'](checkpoint="/CV/gaobiaoli/project/weights/sam_vit_b_01ec64.pth").to(device)
-    dataset = BaseDataset(image_dir="/CV/gaobiaoli/dataset/CIS-Dataset/train", ratio=0.1,patch_size=param.crop_size[0],reshape=(1024,1024))
-    dataloader=DataLoader(dataset=dataset,batch_size=4,num_workers=6,pin_memory=True,shuffle=True,drop_last=True)
+    dataset = SAMAugmentedDataset(image_dir="/CV/gaobiaoli/dataset/CIS-Dataset/train", ratio=0.1,patch_size=param.crop_size[0],reshape=(1024,1024))
+    dataloader=DataLoader(dataset=dataset,batch_size=2,num_workers=6,pin_memory=True,shuffle=True,drop_last=True)
     model=getDemoModel(param=param)
     model.to(device)
     optimizer = optim.Adam(model.parameters(), lr=0.001)

@@ -401,7 +401,7 @@ class SwinTransformerBlock(nn.Module):
             H, W = self.input_resolution
             img_mask = torch.zeros((1, H, W, 1))  # 1 H W 1
             h_slices = (slice(0, -self.window_size), slice(-self.window_size, -self.shift_size),
-                        slice(-self.shift_size, None))  #
+                        slice(-self.shift_size, None))
             w_slices = (slice(0, -self.window_size), slice(-self.window_size, -self.shift_size),
                         slice(-self.shift_size, None))  # shift_size = window_size // 2
             cnt = 0
@@ -512,7 +512,7 @@ class WindowCrossAttention(nn.Module):
 
         self.register_buffer("relative_position_index", relative_position_index)
 
-        self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)  # * 3
+        self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
         self.attn_drop = nn.Dropout(attn_drop)
         self.proj = nn.Linear(dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)
@@ -699,7 +699,7 @@ class PatchMerging_ori(nn.Module):
     def __init__(self, input_resolution, dim, norm_layer=nn.LayerNorm):
         super().__init__()
         self.input_resolution = input_resolution  # patch_resolution
-        self.dim = dim  # 通道数
+        self.dim = dim
         self.reduction = nn.Linear(4 * dim, 2 * dim, bias=False)
         self.norm = norm_layer(4 * dim)
 

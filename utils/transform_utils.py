@@ -1,11 +1,14 @@
 import numpy as np
 import cv2
+
 # cv2.setNumThreads(0)
 # cv2.ocl.setUseOpenCL(False)
 import matplotlib.pyplot as plt
 import torch
 import random
 import kornia
+import torch.nn.functional as F
+
 
 def generate_random_homography_with_disturbance(pts1, size=(640, 640), max_delta=32):
     """
@@ -21,9 +24,9 @@ def generate_random_homography_with_disturbance(pts1, size=(640, 640), max_delta
 
     # 计算单应性矩阵
     H, _ = cv2.findHomography(pts1, pts2)
-    
+
     # 使用网格计算稠密光流
-    y_grid, x_grid = np.mgrid[0:size[1], 0:size[0]]  # 创建网格
+    y_grid, x_grid = np.mgrid[0 : size[1], 0 : size[0]]  # 创建网格
     points = np.vstack((x_grid.flatten(), y_grid.flatten())).T  # 堆叠x和y坐标
 
     # 将齐次坐标添加到点上
@@ -80,7 +83,7 @@ def transformer(I, vgrid, train=True):
             base = torch.arange(0, num_batch).int()
 
         base = base * dim1
-        base = base.repeat_interleave(out_height * out_width, axis=0)  
+        base = base.repeat_interleave(out_height * out_width, axis=0)
         base_y0 = base + y0 * dim2
         base_y1 = base + y1 * dim2
         idx_a = base_y0 + x0
@@ -142,6 +145,7 @@ def transformer(I, vgrid, train=True):
         output = output.permute(0, 3, 1, 2).contiguous()
     return output
 
+
 def get_4cor(flow_gt):
     flow_gt = flow_gt.squeeze(0)
     flow_4cor = torch.zeros((2, 2, 2))
@@ -151,18 +155,22 @@ def get_4cor(flow_gt):
     flow_4cor[:, 1, 1] = flow_gt[:, -1, -1]
     return flow_4cor
 
+
 def get_warp_flow(img, flow, start=0):
     batch_size, _, patch_size_h, patch_size_w = flow.shape
-    grid_warp = get_grid(batch_size, patch_size_h, patch_size_w, start)[:, :2, :, :] + flow
+    grid_warp = (
+        get_grid(batch_size, patch_size_h, patch_size_w, start)[:, :2, :, :] + flow
+    )
     img_warp = transformer(img, grid_warp)
     return img_warp
 
+
 def get_grid(batch_size, H, W, start=0):
-    '''
+    """
     获取网格坐标
     shape: (b,3,h,w)
     item(x,y,z): (x,y,1)
-    '''
+    """
     if torch.cuda.is_available():
         xx = torch.arange(0, W).cuda()
         yy = torch.arange(0, H).cuda()
@@ -173,12 +181,15 @@ def get_grid(batch_size, H, W, start=0):
     yy = yy.view(-1, 1).repeat(1, W)
     xx = xx.view(1, 1, H, W).repeat(batch_size, 1, 1, 1)
     yy = yy.view(1, 1, H, W).repeat(batch_size, 1, 1, 1)
-    ones = torch.ones_like(xx).cuda() if torch.cuda.is_available() else torch.ones_like(xx)
+    ones = (
+        torch.ones_like(xx).cuda() if torch.cuda.is_available() else torch.ones_like(xx)
+    )
     grid = torch.cat((xx, yy, ones), 1).float()
-    if not isinstance(start,int):
-        start=start[:,:,None,None]
+    if not isinstance(start, int):
+        start = start[:, :, None, None]
     grid[:, :2, :, :] = grid[:, :2, :, :] + start
     return grid
+
 
 def gen_basis(h, w, is_qr=True, is_scale=True):
     basis_nb = 8
@@ -187,7 +198,7 @@ def gen_basis(h, w, is_qr=True, is_scale=True):
 
     names = globals()
     for i in range(1, basis_nb + 1):
-        names['basis_' + str(i)] = flow.clone()
+        names["basis_" + str(i)] = flow.clone()
 
     basis_1[:, :, :, 0] += grid[:, :, :, 0]  # [1, w, h, (x, 0)]
     basis_2[:, :, :, 0] += grid[:, :, :, 1]  # [1, w, h, (y, 0)]
@@ -200,9 +211,11 @@ def gen_basis(h, w, is_qr=True, is_scale=True):
     basis_8[:, :, :, 0] += grid[:, :, :, 0] * grid[:, :, :, 1]  # [1, w, h, (xy, y^2)]
     basis_8[:, :, :, 1] += grid[:, :, :, 1] ** 2  # [1, w, h, (xy, y^2)]
 
-    flows = torch.cat([names['basis_' + str(i)] for i in range(1, basis_nb + 1)], dim=0)
+    flows = torch.cat([names["basis_" + str(i)] for i in range(1, basis_nb + 1)], dim=0)
     if is_qr:
-        flows_ = flows.view(basis_nb, -1).permute(1, 0)  # N, h, w, c --> N, h*w*c --> h*w*c, N
+        flows_ = flows.view(basis_nb, -1).permute(
+            1, 0
+        )  # N, h, w, c --> N, h*w*c --> h*w*c, N
         flow_q, _ = torch.linalg.qr(flows_)
         flow_q = flow_q.permute(1, 0).reshape(basis_nb, h, w, 2)
         flows = flow_q
@@ -213,7 +226,10 @@ def gen_basis(h, w, is_qr=True, is_scale=True):
 
     return flows.permute(0, 3, 1, 2)
 
-def warpPerspective(img, H, dsize, mode='bilinear', padding_mode='zeros', align_corners=False):
+
+def warpPerspective(
+    img, H, dsize, mode="bilinear", padding_mode="zeros", align_corners=False
+):
     """
     封装的 `warpPerspective` 函数，支持 tensor 或 ndarray 输入
     :param img: 输入图像，支持 tensor 或 ndarray
@@ -226,106 +242,173 @@ def warpPerspective(img, H, dsize, mode='bilinear', padding_mode='zeros', align_
     """
     if isinstance(img, np.ndarray):  # 如果输入是 ndarray，使用 OpenCV
         # 使用 cv2 的 warpPerspective 进行变换
-        return cv2.warpPerspective(img, H, dsize, flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT)
+        return cv2.warpPerspective(
+            img, H, dsize, flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT
+        )
 
     elif isinstance(img, torch.Tensor):  # 如果输入是 tensor，使用 Kornia
         # 使用 Kornia 的 warp_perspective 进行变换
-        img = img.unsqueeze(0) if img.ndimension() == 3 else img  # Add batch dimension if needed
-        warped_img = kornia.geometry.transform.warp_perspective(img, H, dsize, mode=mode, padding_mode=padding_mode, align_corners=align_corners)
-        return warped_img.squeeze(0)  if warped_img.ndimension() == 3 else warped_img # 保持维度一致
+        img = (
+            img.unsqueeze(0) if img.ndimension() == 3 else img
+        )  # Add batch dimension if needed
+        warped_img = kornia.geometry.transform.warp_perspective(
+            img,
+            H,
+            dsize,
+            mode=mode,
+            padding_mode=padding_mode,
+            align_corners=align_corners,
+        )
+        return (
+            warped_img.squeeze(0) if warped_img.ndimension() == 3 else warped_img
+        )  # 保持维度一致
     else:
         raise TypeError("Input image must be a numpy ndarray or a torch tensor.")
 
-def resize_and_pad(img, target_height, target_width,keep_ratio=True):
+
+def resize_and_pad(img, target_height, target_width, keep_ratio=True):
     """调整图像尺寸并填充以适应目标尺寸"""
-    if not keep_ratio:
-        resized_img = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_LINEAR)
+
     original_height, original_width = img.shape[:2]
+    channels = img.shape[2] if len(img.shape) > 2 else 1
+
+    if not keep_ratio:
+        new_img = cv2.resize(img, (target_height, target_width), interpolation=cv2.INTER_LINEAR)
+        # import time
+        # from .visual_utils import show_mask
+        # from PIL import Image
+        # if channels==1:
+        #     Image.fromarray(show_mask(new_img)).save(str(time.time())+'.png')
+        #     Image.fromarray(show_mask(img)).save(str(time.time())+'.png')
+        return new_img
+    
     scale = min(target_width / original_width, target_height / original_height)
     new_width = int(original_width * scale)
     new_height = int(original_height * scale)
-    
-    resized_img = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_LINEAR)
-    
-    padded_img = np.zeros((target_height, target_width, img.shape[2]), dtype=img.dtype)
+
+    resized_img = cv2.resize(
+        img, (new_width, new_height), interpolation=cv2.INTER_LINEAR
+    )
+
+    if len(resized_img.shape) == 2:  # 图像是灰度图像 (w,h)
+        resized_img = np.expand_dims(resized_img, axis=-1)  # (w,h) -> (w,h,1)
+
+    padded_img = np.zeros((target_height, target_width, channels), dtype=img.dtype)
     pad_top = (target_height - new_height) // 2
     pad_left = (target_width - new_width) // 2
-    
-    padded_img[pad_top:pad_top + new_height, pad_left:pad_left + new_width] = resized_img
+
+    padded_img[pad_top : pad_top + new_height, pad_left : pad_left + new_width] = (
+        resized_img
+    )
+    # import time
+    # from .visual_utils import show_mask
+    # from PIL import Image
+    # if channels==1:
+    #     Image.fromarray(show_mask(padded_img)).save(str(time.time())+'.png')
+    #     Image.fromarray(show_mask(img)).save(str(time.time())+'.png')
     return padded_img
 
-def getDisturbedBox(shape,marginal,patch_size):
+
+def getDisturbedBox(shape, marginal, patch_size):
     height, width = shape
     y = random.randint(marginal, height - marginal - patch_size)
     x = random.randint(marginal, width - marginal - patch_size)
     top_left_point = (x, y)
     bottom_right_point = (patch_size + x, patch_size + y)
 
-
     top_left_point_new = (x, y)
+    top_right_point_new = (x + patch_size - 1, y)
     bottom_left_point_new = (x, patch_size + y - 1)
     bottom_right_point_new = (patch_size + x - 1, patch_size + y - 1)
-    top_right_point_new = (x + patch_size - 1, y)
-    four_points_new = [top_left_point_new, top_right_point_new, bottom_left_point_new, bottom_right_point_new]
 
+    four_points_new = [
+        top_left_point_new,
+        top_right_point_new,
+        bottom_left_point_new,
+        bottom_right_point_new,
+    ]
 
     perturbed_four_points_new = []
     for i in range(4):
-                
+
         t1 = random.randint(-marginal, marginal)
         t2 = random.randint(-marginal, marginal)
 
-        perturbed_four_points_new.append((four_points_new[i][0] + t1,
-                                            four_points_new[i][1] + t2))
-        
-    crop_fn = lambda img: img[top_left_point[1]:bottom_right_point[1], 
-                              top_left_point[0]:bottom_right_point[0]]
-    return four_points_new,perturbed_four_points_new,crop_fn
+        perturbed_four_points_new.append(
+            (four_points_new[i][0] + t1, four_points_new[i][1] + t2)
+        )
+
+    crop_fn = lambda img: img[
+        top_left_point[1] : bottom_right_point[1],
+        top_left_point[0] : bottom_right_point[0],
+    ]
+    return four_points_new, perturbed_four_points_new, crop_fn
 
 
-def getFlow(shape,H,H_inverse):
-    y_grid, x_grid = np.mgrid[0:shape[0], 0:shape[1]]
+def getFlow(shape, H, H_inverse=None):
+    y_grid, x_grid = np.mgrid[0 : shape[0], 0 : shape[1]]
     point = np.vstack((x_grid.flatten(), y_grid.flatten())).transpose()
 
-    point_transformed_branch1 = cv2.perspectiveTransform(np.array([point], dtype=np.float64), H).squeeze()
-    point_transformed_branch1_inv = cv2.perspectiveTransform(np.array([point], dtype=np.float64), H_inverse).squeeze()
-
+    point_transformed_branch1 = cv2.perspectiveTransform(
+        np.array([point], dtype=np.float64), H
+    ).squeeze()
     diff_branch = point_transformed_branch1 - np.array(point, dtype=np.float64)
-    diff_branch_inv = point_transformed_branch1_inv - np.array(point, dtype=np.float64)
-    return diff_branch.reshape(shape[0], shape[1],-1),diff_branch_inv.reshape(shape[0], shape[1],-1)
+    diff_branch = diff_branch.reshape(shape[0], shape[1], -1)
+    if H_inverse is not None:
+        point_transformed_branch1_inv = cv2.perspectiveTransform(
+            np.array([point], dtype=np.float64), H_inverse
+        ).squeeze()
+        diff_branch_inv = point_transformed_branch1_inv - np.array(
+            point, dtype=np.float64
+        )
+        diff_branch_inv = diff_branch_inv.reshape(shape[0], shape[1], -1)
+    else:
+        diff_branch_inv = None
+    return diff_branch, diff_branch_inv
 
-def getFlowWithTorch(shape,H,H_inverse):
+
+def getFlowWithTorch(shape, H, H_inverse):
     """
     用 Kornia 实现计算光流的函数。
-    
+
     Args:
         shape (tuple): 图像的形状，(height, width)。
         H (torch.Tensor): 单应性变换矩阵，形状为 (3, 3)，需为 (1, 3, 3) 批次格式。
         H_inverse (torch.Tensor): 单应性变换的逆矩阵，形状为 (3, 3)，需为 (1, 3, 3) 批次格式。
-    
+
     Returns:
         diff_branch (torch.Tensor): 正向单应性变换的光流，形状为 (height, width, 2)。
         diff_branch_inv (torch.Tensor): 逆向单应性变换的光流，形状为 (height, width, 2)。
     """
-    H=torch.from_numpy(H)
-    H_inverse=torch.from_numpy(H_inverse)
+    H = torch.from_numpy(H)
+    H_inverse = torch.from_numpy(H_inverse)
     # 图像的高度和宽度
     height, width = shape
 
     # 创建网格
-    y_grid, x_grid = torch.meshgrid(torch.arange(height), torch.arange(width), indexing="ij")
-    grid = torch.stack([x_grid, y_grid], dim=-1) # (height, width, 2)
-    
+    y_grid, x_grid = torch.meshgrid(
+        torch.arange(height), torch.arange(width), indexing="ij"
+    )
+    grid = torch.stack([x_grid, y_grid], dim=-1)  # (height, width, 2)
+
     # 转换为齐次坐标 (batch_size=1, num_points, 3)
-    grid_h = kornia.geometry.linalg.convert_points_to_homogeneous(grid.view(-1, 2))  # (H*W, 3)
+    grid_h = kornia.geometry.linalg.convert_points_to_homogeneous(
+        grid.view(-1, 2)
+    )  # (H*W, 3)
     grid_h = grid_h.unsqueeze(0)  # 添加批次维度 (1, H*W, 3)
 
     # 正向单应性变换
-    point_transformed_branch1 = kornia.geometry.transform_points(H.unsqueeze(0), grid_h)  # (1, H*W, 3)
-    point_transformed_branch1 = point_transformed_branch1.squeeze(0)[:, :2]  # 去掉批次维度，提取 (H*W, 2)
+    point_transformed_branch1 = kornia.geometry.transform_points(
+        H.unsqueeze(0), grid_h
+    )  # (1, H*W, 3)
+    point_transformed_branch1 = point_transformed_branch1.squeeze(0)[
+        :, :2
+    ]  # 去掉批次维度，提取 (H*W, 2)
 
     # 逆向单应性变换
-    point_transformed_branch1_inv = kornia.geometry.transform_points(H_inverse.unsqueeze(0), grid_h)
+    point_transformed_branch1_inv = kornia.geometry.transform_points(
+        H_inverse.unsqueeze(0), grid_h
+    )
     point_transformed_branch1_inv = point_transformed_branch1_inv.squeeze(0)[:, :2]
 
     # 计算光流差值
@@ -338,25 +421,30 @@ def getFlowWithTorch(shape,H,H_inverse):
 
     return diff_branch, diff_branch_inv
 
-def generateTrainImagePair(img1, img2, marginal=32, patch_size=640,reshape=None,keep_ratio=True):
-    
+
+def generateTrainImagePair(
+    img1, img2, marginal=32, patch_size=640, reshape=None, keep_ratio=True
+):
+
     # 检查并调整图像
     min_height = 2 * marginal + patch_size
     min_width = 2 * marginal + patch_size
     if reshape is not None:
-        min_height=reshape[0]
-        min_width=reshape[1]
-        img1 = resize_and_pad(img1, min_height, min_width)
-        img2 = resize_and_pad(img2, min_height, min_width)
+        min_height = reshape[0]
+        min_width = reshape[1]
+        img1 = resize_and_pad(img1, min_height, min_width,keep_ratio=keep_ratio)
+        img2 = resize_and_pad(img2, min_height, min_width,keep_ratio=keep_ratio)
     elif img1.shape[0] < min_height or img1.shape[1] < min_width:
-        img1 = resize_and_pad(img1, min_height, min_width)
-        img2 = resize_and_pad(img2, min_height, min_width)
-    
-    four_points_new,perturbed_four_points_new, crop_fn = getDisturbedBox(img1.shape[0:-1], marginal, patch_size)
+        img1 = resize_and_pad(img1, min_height, min_width,keep_ratio=keep_ratio)
+        img2 = resize_and_pad(img2, min_height, min_width,keep_ratio=keep_ratio)
+
+    four_points_new, perturbed_four_points_new, crop_fn = getDisturbedBox(
+        img1.shape[0:-1], marginal, patch_size
+    )
 
     org_corners = np.float32(four_points_new)
     dst = np.float32(perturbed_four_points_new)
-    disturbed_corners = (dst-org_corners).reshape(2,2,2) # w,h,(x,y)
+    disturbed_corners = (dst - org_corners).reshape(2, 2, 2)  # w,h,(x,y)
     H = cv2.getPerspectiveTransform(org_corners, dst)
     H_inverse = np.linalg.inv(H)
 
@@ -365,25 +453,60 @@ def generateTrainImagePair(img1, img2, marginal=32, patch_size=640,reshape=None,
     img_patch_ori = crop_fn(img1)
     img_patch_pert = crop_fn(warped_image)
 
-    # diff_branch,diff_branch_inv=getFlow(img1.shape[0:2],H,H_inverse)
-    # pf_patch=crop_fn(diff_branch)
-    # pf_patch_inv=crop_fn(diff_branch_inv)
+    # diff_branch, diff_branch_inv = getFlow(img1.shape[0:2], H, H_inverse)
+    # pf_patch = crop_fn(diff_branch)
+    # pf_patch_inv = crop_fn(diff_branch_inv)
 
     pf_patch,pf_patch_inv=1,1
-
+    # img1,warped_image=1,1
     return {
-            "img1_patch": img_patch_ori,
-            "img2_patch": img_patch_pert,
-            "img1_full": img1,
-            "img2_full": warped_image,
-            "flow_img1": pf_patch,
-            "flow_img2": pf_patch_inv,
-            "disturbed_corners": disturbed_corners,
-            "origin_corners": org_corners,
-            "H": H,
-        }
+        "img1_patch": img_patch_ori,
+        "img2_patch": img_patch_pert,
+        "img1_full": img1,
+        "img2_full": warped_image,
+        "flow_img1": pf_patch,
+        "flow_img2": pf_patch_inv,
+        "disturbed_corners": disturbed_corners,
+        "origin_corners": org_corners,
+        "H": H,
+    }
 
 
+def upsample2d_flow_as(inputs, target_as, mode="bilinear", if_scale=False):
+    _, _, h, w = target_as.size()
+    if if_scale:
+        _, _, h_, w_ = inputs.size()
+        inputs[:, 0, :, :] *= w / w_
+        inputs[:, 1, :, :] *= h / h_
+    res = F.interpolate(inputs, [h, w], mode=mode, align_corners=True)
+    return res
 
-if __name__=='__main__':
-    print(get_grid(1,320,640).shape)
+def get_flow_from_delta(delta_corner, target_as):
+    """
+    根据 delta_corner 和 target_as 生成光流。
+
+    Args:
+        delta_corner (torch.Tensor): (b, 4, 2)，表示每个 batch 的角点偏移量。
+        target_as (torch.Tensor): (b, c, h, w)，目标张量，提供尺寸信息。
+
+    Returns:
+        torch.Tensor: (b, 2, h, w)，表示每个像素的二维光流。
+    """
+    b, _, h, w = target_as.shape
+    corners = torch.tensor(
+            [
+                [0,0],
+                [w-1, 0],
+                [0, h-1],
+                [w-1, h-1],
+            ], dtype=torch.float
+        ).repeat(b, 1, 1).to(delta_corner.device)
+    corners_hat = corners + delta_corner
+    H = kornia.geometry.get_perspective_transform(corners, corners_hat)
+    # return h
+    grid = kornia.utils.create_meshgrid(h, w, normalized_coordinates=False).to(delta_corner.device)  # (1, h, w, 2)
+    grid = grid.repeat(b, 1, 1, 1) 
+    grid_transformed = kornia.geometry.transform_points(H, grid)
+    return (grid_transformed-grid).permute(0,3,1,2)
+if __name__ == "__main__":
+    print(get_grid(1, 320, 640).shape)

@@ -10,6 +10,6 @@ def getDemoModel(img2_channel=3,param=None):
     #     backbone2=backbone1
     # else:
     #     backbone2=resnet34(in_channels=img2_channel)
-    regis=SingleSwinTransformer(param=param)
+    regis=SwinTransformer(param=param)
     model=BaseModel(backbone_1=backbone1,backbone_2=backbone1,registration=regis)
     return model

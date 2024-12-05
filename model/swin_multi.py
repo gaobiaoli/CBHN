@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import model.net as net
 from timm.models.layers import DropPath, to_2tuple, trunc_normal_
-from utils.transform_utils import gen_basis,get_warp_flow
+from utils.transform_utils import gen_basis,get_warp_flow,get_flow_from_delta
 
 class SwinTransformer(nn.Module):
     r""" Swin Transformer
@@ -49,7 +49,7 @@ class SwinTransformer(nn.Module):
         self.mlp_ratio = param.mlp_ratio
         self.drop_path = 0
         self.activation = nn.GELU
-        
+
         # split image into non-overlapping patches
         self.patch_embed = PatchEmbed(
             img_size=param.crop_size, patch_size=param.patch_size, in_chans=param.in_chans, embed_dim=self.embed_dim,
@@ -115,7 +115,7 @@ class SwinTransformer(nn.Module):
 
         self.activate = self.activation()
 
-        trunc_normal_(self.query_token, std=.02)
+        # trunc_normal_(self.query_token, std=.02)
 
     def forward(self, x):
         """
@@ -124,7 +124,8 @@ class SwinTransformer(nn.Module):
         # forward_features
         bs, _, h_patch, w_patch = x.shape
         query_token = self.query_token.repeat(bs, 1, 1)
-        x1_patch, x2_patch = x[:, :1], x[:, 1:]
+        # x1_patch, x2_patch = x[:, :1], x[:, 1:]
+        x1_patch, x2_patch = x[:, :3], x[:, 3:]
         x1_pyramid = self.feature_pyramid_extractor(x1_patch)  # + [x1_patch]
         x2_pyramid = self.feature_pyramid_extractor(x2_patch)  # + [x2_patch]
         # return 
@@ -132,15 +133,16 @@ class SwinTransformer(nn.Module):
         for l, (x1, x2) in enumerate(zip(x1_pyramid, x2_pyramid)):
             _, _, h_x, w_x, = x1.shape
 
-            # warping
+            # # warping
             if l == 0:
                 x1_warp, x2_warp = x1, x2
             else:
-                H_flow_f = (self.basis * weight_f).sum(1).reshape(bs, 2, h_patch, w_patch)
+                H_flow_f = get_flow_from_delta(weight_f.reshape(-1,4,2),x1_patch)
+                # H_flow_f = (self.basis * weight_f).sum(1).reshape(bs, 2, h_patch, w_patch)
                 H_flow_f = upsample2d_flow_as(H_flow_f, x1, if_scale=True)
-                x2_warp = get_warp_flow(x2, H_flow_f)
+                x1_warp = get_warp_flow(x1, H_flow_f)
 
-            x = torch.cat((x1, x2_warp), dim=1)
+            x = torch.cat((x1_warp, x2), dim=1)
             x = x.flatten(2).transpose(1, 2)
 
             x = self.encoder_layers[self.num_layers - l - 1](x)
@@ -168,6 +170,8 @@ class FeatureExtractor(nn.Module):
         for i_layer in range(self.num_layers):
             in_channel = int(
                 (self.embed_dim * 2 ** (i_layer - 1)) ** np.heaviside(i_layer, 0))  # 1, embed_dim, 2*embed_dim ...
+            if i_layer ==0:
+                in_channel=3
             out_channel = int((self.embed_dim * 2 ** i_layer) ** np.heaviside(i_layer + 1,
                                                                               0))  # embed_dim, 2*embed_dim, 4*embed_dim...
             layer = nn.Sequential(
@@ -236,7 +240,7 @@ class LayerScale_Block_CA(nn.Module):
         self.norm2 = norm_layer(dim)
         mlp_hidden_dim = int(dim * mlp_ratio)
         self.mlp1 = Mlp_block(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer,
-                              drop=drop)  #
+                              drop=drop)
         self.mlp2 = Mlp_block(in_features=dim, hidden_features=mlp_hidden_dim, out_features=out_dim,
                               act_layer=act_layer, drop=drop)
         self.norm3 = norm_layer(dim)
@@ -766,7 +770,7 @@ class PatchMerging(nn.Module):
     def __init__(self, input_resolution, dim, norm_layer=nn.LayerNorm):
         super().__init__()
         self.input_resolution = input_resolution  # patch_resolution
-        self.dim = dim  # 通道数
+        self.dim = dim
         self.reduction = nn.Linear(4 * dim, 2 * dim, bias=False)
         self.conv1 = nn.Conv2d(in_channels=dim, out_channels=2 * dim, kernel_size=3, bias=False, stride=2, padding=1)
         self.norm1 = nn.BatchNorm2d(2 * dim)
