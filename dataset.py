@@ -6,6 +6,7 @@ from torch.utils.data import Dataset
 from PIL import Image
 from SAM.SamAutomaticMaskGenerator import SamAutomaticMaskGenerator
 from utils.transform_utils import generateTrainImagePair
+from utils.visual_utils import save_mask
 import pickle
 import random
 from tqdm import tqdm
@@ -15,6 +16,7 @@ class BaseDataset(Dataset):
     def __init__(
         self,
         image_dir,
+        image_files=None,
         cache_dir="cache",
         device="cuda",
         transform=None,
@@ -25,10 +27,13 @@ class BaseDataset(Dataset):
         patch_size=328,
     ):
         self.image_dir = image_dir
-        self.image_files = [
-            f for f in os.listdir(image_dir) if f.endswith((".png", ".jpg", ".jpeg"))
-        ]
-        self.image_files = self.image_files[0 : int(len(self.image_files) * ratio)]
+        if image_files is None:
+            self.image_files = [
+                f for f in os.listdir(image_dir) if f.endswith((".png", ".jpg", ".jpeg"))
+            ]
+            self.image_files = self.image_files[0 : int(len(self.image_files) * ratio)]
+        else:
+            self.image_files = image_files
         self.device = device
         self.transform = transform
         self.cache_dir = cache_dir
@@ -166,41 +171,24 @@ class SAMAugmentedDataset(BaseDataset):
     def __getitem__(self, idx):
         # 获取图像路径
         img_path = os.path.join(self.image_dir, self.image_files[idx])
-        cache_file = os.path.join(self.cache_dir, f"{self.image_files[idx]}.pkl")
+        cache_id=self.image_files[idx].split(".")[0]
+        cache_file = os.path.join(self.cache_dir,f"{cache_id}.png")
 
         if random.random() < 1.0 and os.path.exists(cache_file):
             # 读取缓存
-            with open(cache_file, "rb") as f:
-                cache = pickle.load(f)
-            img1 = (
-                cache["image"]
-                if "image" in cache.keys()
-                else cv2.cvtColor(cv2.imread(img_path), cv2.COLOR_BGR2RGB)
-            )
-            img2 = cache["mask"]
-            data_dict = self._generate_data(img1=img1, img2=img2)
+            img = cv2.imread(img_path)
+            mask = cv2.imread(cache_file,0)
+            w_m,h_m = mask.shape
+            w,h = img.shape
+            if w_m!=w or h_m!=h:
+                mask = cv2.resize(mask,(w,h))
+            data_dict = self._generate_data(img1=img, img2=mask)
         else:
             # 重新生成数据
             image = cv2.cvtColor(cv2.imread(img_path), cv2.COLOR_BGR2RGB)
-
-            # embedding_path = os.path.join(
-            #     self.cache_dir,
-            #     f"{hash(self.image_dir + '_' + self.image_files[idx])}.pkl",
-            # )
-            # if os.path.exists(embedding_path):
-            #     with open(embedding_path, "rb") as f:
-            #         image_embedding = pickle.load(f)
-            #     self.autoMask.set_cached_embedding(
-            #         image_embedding=image_embedding, shape=image.shape[:2]
-            #     )
             masks = self.autoMask.generate(image=image)
-            # image_embedding = self.autoMask.predictor.get_image_embedding().to(
-            #     self.device
-            # )
-            # with open(embedding_path, "wb") as f:
-            #     pickle.dump(image_embedding, f)
             self.autoMask.predictor.reset_image()
-            mask = np.zeros_like(image[:, :, 0], dtype=np.float32)
+            mask = np.zeros_like(image[:, :, 0], dtype=np.float16)
             for i, m in enumerate(masks[::-1]):
                 mask[m["segmentation"]] = i + 1
 
@@ -217,7 +205,7 @@ class SAMAugmentedDataset(BaseDataset):
             masks = self.autoMask.generate(image=image)
             # image_embedding = self.autoMask.predictor.get_image_embedding().to(self.device)
             self.autoMask.predictor.reset_image()
-            mask = np.zeros_like(image[:, :, 0], dtype=np.float32)
+            mask = np.zeros_like(image[:, :, 0], dtype=np.float16)
             for i, m in enumerate(masks[::-1]):
                 mask[m["segmentation"]] = i + 1
 
@@ -232,21 +220,32 @@ class SAMAugmentedDataset(BaseDataset):
             with open(cache_file, "wb") as f:
                 pickle.dump(data_dict, f)
 
-    def generateSAMCache(self):
+    def generateSAMCache(self,start=0,reset=False):
         # 遍历所有图像并生成缓存
-        for idx in tqdm(range(len(self.image_files))):
+        for idx in tqdm(range(start,len(self.image_files))):
             img_path = os.path.join(self.image_dir, self.image_files[idx])
+            cache_id=self.image_files[idx].split(".")[0]
+            if os.path.exists(os.path.join(self.cache_dir,f"{cache_id}.png")) and not reset:
+                continue
             image = cv2.cvtColor(cv2.imread(img_path), cv2.COLOR_BGR2RGB)
-
+            w, h,_ = image.shape
+            if w*h > 2000*4000:
+                print(f"Too Large {w}, {h}, Resize!")
+                image = cv2.resize(image,(w//2,h//2))
             masks = self.autoMask.generate(image=image)
             # image_embedding = self.autoMask.predictor.get_image_embedding().to(self.device)
             self.autoMask.predictor.reset_image()
             mask = np.zeros_like(image[:, :, 0], dtype=np.float32)
+            # print(len(masks))
             for i, m in enumerate(masks[::-1]):
                 mask[m["segmentation"]] = i + 1
-
-            cache_file = os.path.join(self.cache_dir, f"{self.image_files[idx]}.pkl")
-            data_dict = {"image": image, "mask": mask}
+            mask = mask % 255
+            # cache_file = os.path.join(self.cache_dir, f"{self.image_files[idx]}.pkl")
+            # data_dict = {"image": image, "mask": mask}
+            # color_mask = cv2.applyColorMap(mask.astype(np.uint8), cv2.COLORMAP_JET)
+            cache_id=self.image_files[idx].split(".")[0]
+            # cv2.imwrite(os.path.join(self.cache_dir,f"{cache_id}.png"), color_mask)
             # 保存到缓存
-            with open(cache_file, "wb") as f:
-                pickle.dump(data_dict, f)
+            # with open(cache_file, "wb") as f:
+            #     pickle.dump(data_dict, f)
+            save_mask(mask.astype(np.uint8),os.path.join(self.cache_dir,f"{cache_id}.png"))

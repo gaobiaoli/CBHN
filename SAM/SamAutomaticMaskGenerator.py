@@ -300,7 +300,7 @@ class SamAutomaticMaskGenerator:
             points=torch.as_tensor(points.repeat(masks.shape[1], axis=0)),
         )
         del masks
-
+        torch.cuda.empty_cache()
         # Filter by predicted IoU
         if self.pred_iou_thresh > 0.0:
             keep_mask = data["iou_preds"] > self.pred_iou_thresh

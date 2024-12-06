@@ -3,6 +3,7 @@ import torch
 import numpy as np
 import matplotlib.cm as cm
 import random
+from functools import lru_cache
 def show_tensor(tensor):
     '''
     可视化tensor:转换通道 + 转为np.uint8
@@ -46,7 +47,7 @@ def display_images_in_row(images, padding=10, bg_color=(255, 255, 255)):
     return combined_image
 
 
-
+@lru_cache
 def generate_unique_colors(num_colors):
     """生成不重复的随机颜色"""
     random.seed(0)
@@ -80,3 +81,18 @@ def show_mask(mask):
             colored_mask[mask == label] = colors[i - 1]  # 将颜色分配给标签
 
     return colored_mask
+
+def save_mask(mask,path):
+    mask_image = Image.fromarray(mask, mode='P')
+    unique_labels = np.unique(mask)
+    num_colors = len(unique_labels) - 1  # 排除背景标签 0
+    palette=generate_unique_colors(max(num_colors,255))
+    mask_image.putpalette(palette)
+    mask_image.save(path)
+
+
+if __name__=="__main__":
+    import cv2
+    img = cv2.imread('/CV/gaobiaoli/cache/000000000034.png',0)
+    print(np.unique(img))
+    print(img.shape)    
